@@ -63,7 +63,19 @@ test("clearConfig is written with 0600 permissions too", () => {
   assert.equal(mode, 0o600);
 });
 
-test("loadConfig treats a corrupted config file as empty rather than throwing", () => {
+test("loadConfig treats a corrupted config file as empty and warns on stderr instead of failing silently", () => {
   writeFileSync(getConfigPath(), "{ not valid json", "utf-8");
-  assert.deepEqual(loadConfig(), {});
+
+  const originalError = console.error;
+  let warning;
+  console.error = (msg) => { warning = msg; };
+  let result;
+  try {
+    result = loadConfig();
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.deepEqual(result, {});
+  assert.match(warning, /could not parse config file/);
 });

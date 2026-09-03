@@ -13,6 +13,11 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CLI_PATH = join(__dirname, "..", "bin", "line-send.js");
 
+// Format-valid fake LINE ids (prefix + 32 hex chars), so tests that aren't
+// specifically about id-format validation don't trip over it by accident.
+const VALID_USER_ID_1 = "U" + "1".repeat(32);
+const VALID_USER_ID_2 = "U" + "2".repeat(32);
+
 const tempDirs = [];
 function newConfigDir() {
   const dir = mkdtempSync(join(tmpdir(), "line-send-cli-test-"));
@@ -57,7 +62,7 @@ test("unknown command exits 1 and shows usage", () => {
 });
 
 test("missing access token: text command exits 1 with a clear message", () => {
-  const result = runCli(["text", "--to", "U123", "--message", "hi"]);
+  const result = runCli(["text", "--to", VALID_USER_ID_1, "--message", "hi"]);
   assert.equal(result.status, 1);
   assert.match(result.stderr, /No LINE Channel Access Token configured/);
 });
@@ -69,14 +74,14 @@ test("text: missing --to exits 1", () => {
 });
 
 test("text: --message with no value exits 1 with a clear error (regression: used to silently become `true`)", () => {
-  const result = runCli(["text", "--to", "U123", "--message"], { env: { LINE_CHANNEL_ACCESS_TOKEN: "dummy" } });
+  const result = runCli(["text", "--to", VALID_USER_ID_1, "--message"], { env: { LINE_CHANNEL_ACCESS_TOKEN: "dummy" } });
   assert.equal(result.status, 1);
   assert.match(result.stderr, /--message requires a value/);
 });
 
 test("text: --reply-to with no value exits 1 with a clear error", () => {
   const result = runCli(
-    ["text", "--to", "U123", "--message", "hi", "--reply-to"],
+    ["text", "--to", VALID_USER_ID_1, "--message", "hi", "--reply-to"],
     { env: { LINE_CHANNEL_ACCESS_TOKEN: "dummy" } }
   );
   assert.equal(result.status, 1);
@@ -85,7 +90,7 @@ test("text: --reply-to with no value exits 1 with a clear error", () => {
 
 test("sticker: missing --package-id exits 1", () => {
   const result = runCli(
-    ["sticker", "--to", "U123", "--sticker-id", "1"],
+    ["sticker", "--to", VALID_USER_ID_1, "--sticker-id", "1"],
     { env: { LINE_CHANNEL_ACCESS_TOKEN: "dummy" } }
   );
   assert.equal(result.status, 1);
@@ -100,11 +105,51 @@ test("multicast: missing --user-id exits 1", () => {
 
 test("profile: more than one --user-id is rejected (regression for the array-shape bug)", () => {
   const result = runCli(
-    ["profile", "--user-id", "U111", "--user-id", "U222"],
+    ["profile", "--user-id", VALID_USER_ID_1, "--user-id", VALID_USER_ID_2],
     { env: { LINE_CHANNEL_ACCESS_TOKEN: "dummy" } }
   );
   assert.equal(result.status, 1);
   assert.match(result.stderr, /profile accepts exactly one --user-id/);
+});
+
+test("text: --to with an invalid LINE id format is rejected", () => {
+  const result = runCli(
+    ["text", "--to", "not-a-valid-id", "--message", "hi"],
+    { env: { LINE_CHANNEL_ACCESS_TOKEN: "dummy" } }
+  );
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /--to doesn't look like a valid LINE id/);
+});
+
+test("multicast: an invalid --user-id format is rejected", () => {
+  const result = runCli(
+    ["multicast", "--user-id", "not-a-valid-id", "--message", "hi"],
+    { env: { LINE_CHANNEL_ACCESS_TOKEN: "dummy" } }
+  );
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /--user-id doesn't look like a valid LINE id/);
+});
+
+test("multicast: a group/room id (C.../R... prefix) is rejected for --user-id", () => {
+  // Multicast recipients must be user ids specifically — unlike a push's
+  // --to, groups/rooms aren't valid multicast targets.
+  const groupId = "C" + "3".repeat(32);
+  const result = runCli(
+    ["multicast", "--user-id", groupId, "--message", "hi"],
+    { env: { LINE_CHANNEL_ACCESS_TOKEN: "dummy" } }
+  );
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /--user-id doesn't look like a valid LINE id/);
+});
+
+test("multicast: more than 500 --user-id values is rejected", () => {
+  const manyIds = Array.from({ length: 501 }, () => ["--user-id", VALID_USER_ID_1]).flat();
+  const result = runCli(
+    ["multicast", ...manyIds, "--message", "hi"],
+    { env: { LINE_CHANNEL_ACCESS_TOKEN: "dummy" } }
+  );
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /multicast accepts at most 500 --user-id values \(got 501\)/);
 });
 
 test("config: --token with no value exits 1 with a clear error", () => {

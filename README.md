@@ -38,26 +38,29 @@ export LINE_CHANNEL_ACCESS_TOKEN=YOUR_TOKEN
 
 ```bash
 # Send a text message
-line-send text --to U1234567890abcdef --message "Hello from Bender!"
+line-send text --to Ua1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4 --message "Hello from Bender!"
 
-# Reply to an inbound event
-line-send text --to U1234567890abcdef --message "Thanks!" --reply-to <replyToken>
+# Reply to an inbound event (--to isn't needed for a reply)
+line-send text --message "Thanks!" --reply-to <replyToken>
 
 # Send a sticker
-line-send sticker --to U1234567890abcdef --package-id 6325 --sticker-id 10979904
+line-send sticker --to Ua1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4 --package-id 6325 --sticker-id 10979904
 
 # Send an image
-line-send image --to U1234567890abcdef --url https://example.com/photo.jpg
+line-send image --to Ua1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4 --url https://example.com/photo.jpg
 
-# Multicast to multiple users
-line-send multicast --user-id U111 --user-id U222 --message "Party at 7!"
+# Multicast to multiple users (max 500 recipients)
+line-send multicast --user-id <userId1> --user-id <userId2> --message "Party at 7!"
 
 # Broadcast to all followers
 line-send broadcast --message "Good morning!"
 
 # Get user profile
-line-send profile --user-id U1234567890abcdef
+line-send profile --user-id Ua1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4
 ```
+
+`--to` and `--user-id` must look like a LINE id (a `U`/`C`/`R` prefix followed by 32 hex
+characters) — the CLI validates this before making any API call.
 
 ## Development
 

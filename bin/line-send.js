@@ -43,13 +43,13 @@ Config File:
   ${getConfigPath()}
 
 Examples:
-  line-send text --to U1234567890abcdef --message "Hey, how are you?"
-  line-send text --to U1234567890abcdef --message "Thanks!" --reply-to abc123
-  line-send sticker --to U1234567890abcdef --package-id 6325 --sticker-id 10979904
-  line-send image --to U1234567890abcdef --url https://example.com/photo.jpg
-  line-send multicast --user-id U111 --user-id U222 --message "Party at 7!"
+  line-send text --to Ua1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4 --message "Hey, how are you?"
+  line-send text --to Ua1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4 --message "Thanks!" --reply-to abc123
+  line-send sticker --to Ua1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4 --package-id 6325 --sticker-id 10979904
+  line-send image --to Ua1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4 --url https://example.com/photo.jpg
+  line-send multicast --user-id U11111111111111111111111111111111 --user-id U22222222222222222222222222222222 --message "Party at 7!"
   line-send broadcast --message "Good morning everyone!"
-  line-send profile --user-id U1234567890abcdef
+  line-send profile --user-id Ua1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4
 `.trim();
 
 function parseArgs(argv) {
@@ -154,13 +154,52 @@ function optionalString(flags, key) {
 }
 
 /**
+ * A LINE user/group/room id is a single-letter prefix followed by 32 hex
+ * characters (33 chars total). Catching an obviously malformed id here
+ * gives a clear client-side error instead of a confusing 400 from LINE.
+ */
+function isValidLineId(value, allowedPrefixes) {
+  return new RegExp(`^[${allowedPrefixes}][0-9a-f]{32}$`, "i").test(value);
+}
+
+function checkLineId(value, key, allowedPrefixes) {
+  if (value !== undefined && !isValidLineId(value, allowedPrefixes)) {
+    printError(
+      `--${key} doesn't look like a valid LINE id ` +
+      `(expected one of "${allowedPrefixes.split("").join('", "')}" followed by 32 hex characters), got: ${value}`
+    );
+    process.exit(1);
+  }
+  return value;
+}
+
+/** Push targets (text/sticker/image) can be a user, group, or room id. */
+function requireLineId(flags, key, allowedPrefixes = "UCR") {
+  return checkLineId(requireString(flags, key), key, allowedPrefixes);
+}
+
+function optionalLineId(flags, key, allowedPrefixes = "UCR") {
+  return checkLineId(optionalString(flags, key), key, allowedPrefixes);
+}
+
+const MAX_MULTICAST_RECIPIENTS = 500;
+
+/**
  * Get the --user-id list (multicast allows several). Exits if none were
- * given a value.
+ * given a value, if any of them aren't shaped like a LINE user id, or if
+ * there are more than LINE's multicast recipient limit.
  */
 function requireUserIds(flags) {
   const value = flags["user-id"];
   if (!Array.isArray(value) || value.length === 0) {
     printError("--user-id is required (can be specified multiple times)");
+    process.exit(1);
+  }
+  for (const id of value) {
+    checkLineId(id, "user-id", "U");
+  }
+  if (value.length > MAX_MULTICAST_RECIPIENTS) {
+    printError(`multicast accepts at most ${MAX_MULTICAST_RECIPIENTS} --user-id values (got ${value.length})`);
     process.exit(1);
   }
   return value;
@@ -232,9 +271,11 @@ async function main() {
 
   // --- Text ---
   if (command === "text") {
-    const to = requireString(flags, "to");
     const message = requireString(flags, "message");
     const replyTo = optionalString(flags, "reply-to");
+    // --to is only meaningful for a push; a reply is scoped to the
+    // replyToken and doesn't take a recipient.
+    const to = replyTo ? optionalLineId(flags, "to") : requireLineId(flags, "to");
 
     const result = await sendText(token, to, message, replyTo);
     printJson(result);
@@ -243,7 +284,7 @@ async function main() {
 
   // --- Sticker ---
   if (command === "sticker") {
-    const to = requireString(flags, "to");
+    const to = requireLineId(flags, "to");
     const packageId = requireString(flags, "package-id");
     const stickerId = requireString(flags, "sticker-id");
 
@@ -254,7 +295,7 @@ async function main() {
 
   // --- Image ---
   if (command === "image") {
-    const to = requireString(flags, "to");
+    const to = requireLineId(flags, "to");
     const url = requireString(flags, "url");
 
     const result = await sendImage(token, to, url);
@@ -286,7 +327,7 @@ async function main() {
     const userId = requireSingleUserId(flags);
 
     const result = await getProfile(token, userId);
-    printJson(result.data);
+    printJson(result);
     process.exit(0);
   }
 }

@@ -37,10 +37,10 @@ Token is resolved in order:
 line-send text --to <userId> --message "Your message here"
 ```
 
-Reply to an inbound event (use the replyToken):
+Reply to an inbound event (use the replyToken; `--to` isn't needed for a reply):
 
 ```bash
-line-send text --to <userId> --message "Reply text" --reply-to <replyToken>
+line-send text --message "Reply text" --reply-to <replyToken>
 ```
 
 ### Send sticker
@@ -58,7 +58,7 @@ line-send image --to <userId> --url https://example.com/photo.jpg
 ### Multicast (up to 500 users)
 
 ```bash
-line-send multicast --user-id U111 --user-id U222 --message "Hello!"
+line-send multicast --user-id <userId1> --user-id <userId2> --message "Hello!"
 ```
 
 ### Broadcast (all followers)
