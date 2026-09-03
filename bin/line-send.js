@@ -17,7 +17,7 @@
  */
 
 import { sendText, sendSticker, sendImage, multicast, broadcast, getProfile } from "../lib/line-api.js";
-import { loadConfig, saveConfig, getConfigPath } from "../lib/config.js";
+import { loadConfig, saveConfig, clearConfig, getConfigPath } from "../lib/config.js";
 
 const USAGE = `
 openclaw-line-send — Send outbound LINE messages
@@ -59,9 +59,25 @@ function parseArgs(argv) {
   for (let i = 1; i < args.length; i++) {
     const arg = args[i];
     if (arg.startsWith("--")) {
+      // Support --flag=value explicitly, so values that themselves start
+      // with "--" (e.g. --message="--call me now") aren't mistaken for a
+      // separate flag.
+      const eqIndex = arg.indexOf("=");
+      if (eqIndex !== -1) {
+        const key = arg.slice(2, eqIndex);
+        const value = arg.slice(eqIndex + 1);
+        if (key === "user-id") {
+          if (!flags[key]) flags[key] = [];
+          flags[key].push(value);
+        } else {
+          flags[key] = value;
+        }
+        continue;
+      }
+
       const key = arg.slice(2);
       const next = args[i + 1];
-      if (next && !next.startsWith("--")) {
+      if (next !== undefined && !next.startsWith("--")) {
         if (key === "user-id") {
           if (!flags[key]) flags[key] = [];
           flags[key].push(next);
@@ -130,7 +146,7 @@ async function main() {
       process.exit(0);
     }
     if (flags.clear) {
-      saveConfig({});
+      clearConfig();
       printSuccess("Config cleared");
       process.exit(0);
     }
@@ -204,8 +220,12 @@ async function main() {
   // --- Profile ---
   if (command === "profile") {
     if (!flags["user-id"]) { printError("--user-id is required"); process.exit(1); }
+    if (flags["user-id"].length !== 1) {
+      printError("profile accepts exactly one --user-id");
+      process.exit(1);
+    }
 
-    const result = await getProfile(token, flags["user-id"]);
+    const result = await getProfile(token, flags["user-id"][0]);
     printJson(result.data);
     process.exit(0);
   }
