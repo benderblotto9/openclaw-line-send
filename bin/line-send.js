@@ -19,6 +19,8 @@
 import { sendText, sendSticker, sendImage, multicast, broadcast, getProfile } from "../lib/line-api.js";
 import { loadConfig, saveConfig, clearConfig, getConfigPath } from "../lib/config.js";
 
+const KNOWN_COMMANDS = new Set(["text", "sticker", "image", "multicast", "broadcast", "profile"]);
+
 const USAGE = `
 openclaw-line-send — Send outbound LINE messages
 
@@ -119,6 +121,61 @@ function printSuccess(msg) {
   console.log(JSON.stringify({ ok: true, message: msg }));
 }
 
+/**
+ * Get a required string flag. Exits with a clear error if the flag is
+ * missing entirely, or if it was passed with no value (e.g. a trailing
+ * `--message` with nothing after it, which parseArgs records as `true`
+ * rather than a string).
+ */
+function requireString(flags, key) {
+  const value = flags[key];
+  if (value === undefined) {
+    printError(`--${key} is required`);
+    process.exit(1);
+  }
+  if (value === true) {
+    printError(`--${key} requires a value`);
+    process.exit(1);
+  }
+  return value;
+}
+
+/**
+ * Get an optional string flag. Returns undefined if not passed, but still
+ * rejects the "passed with no value" case the same way requireString does.
+ */
+function optionalString(flags, key) {
+  const value = flags[key];
+  if (value === true) {
+    printError(`--${key} requires a value`);
+    process.exit(1);
+  }
+  return value;
+}
+
+/**
+ * Get the --user-id list (multicast allows several). Exits if none were
+ * given a value.
+ */
+function requireUserIds(flags) {
+  const value = flags["user-id"];
+  if (!Array.isArray(value) || value.length === 0) {
+    printError("--user-id is required (can be specified multiple times)");
+    process.exit(1);
+  }
+  return value;
+}
+
+/** Get exactly one --user-id (profile doesn't support multiple). */
+function requireSingleUserId(flags) {
+  const userIds = requireUserIds(flags);
+  if (userIds.length !== 1) {
+    printError("profile accepts exactly one --user-id");
+    process.exit(1);
+  }
+  return userIds[0];
+}
+
 async function main() {
   const { command, flags } = parseArgs(process.argv);
 
@@ -129,8 +186,9 @@ async function main() {
 
   // --- Config commands ---
   if (command === "config") {
-    if (flags.token) {
-      saveConfig({ channelAccessToken: flags.token });
+    const tokenValue = optionalString(flags, "token");
+    if (tokenValue !== undefined) {
+      saveConfig({ channelAccessToken: tokenValue });
       printSuccess(`Token saved to ${getConfigPath()}`);
       process.exit(0);
     }
@@ -154,6 +212,14 @@ async function main() {
     process.exit(1);
   }
 
+  // Reject unknown commands before requiring a token, so a typo'd command
+  // name gets "Unknown command" instead of a misleading auth error.
+  if (!KNOWN_COMMANDS.has(command)) {
+    printError(`Unknown command: ${command}`);
+    console.log(USAGE);
+    process.exit(1);
+  }
+
   // --- All other commands need a token ---
   const token = getAccessToken();
   if (!token) {
@@ -166,73 +232,63 @@ async function main() {
 
   // --- Text ---
   if (command === "text") {
-    if (!flags.to) { printError("--to is required"); process.exit(1); }
-    if (!flags.message) { printError("--message is required"); process.exit(1); }
+    const to = requireString(flags, "to");
+    const message = requireString(flags, "message");
+    const replyTo = optionalString(flags, "reply-to");
 
-    const result = await sendText(token, flags.to, flags.message, flags["reply-to"]);
+    const result = await sendText(token, to, message, replyTo);
     printJson(result);
     process.exit(0);
   }
 
   // --- Sticker ---
   if (command === "sticker") {
-    if (!flags.to) { printError("--to is required"); process.exit(1); }
-    if (!flags["package-id"]) { printError("--package-id is required"); process.exit(1); }
-    if (!flags["sticker-id"]) { printError("--sticker-id is required"); process.exit(1); }
+    const to = requireString(flags, "to");
+    const packageId = requireString(flags, "package-id");
+    const stickerId = requireString(flags, "sticker-id");
 
-    const result = await sendSticker(token, flags.to, flags["package-id"], flags["sticker-id"]);
+    const result = await sendSticker(token, to, packageId, stickerId);
     printJson(result);
     process.exit(0);
   }
 
   // --- Image ---
   if (command === "image") {
-    if (!flags.to) { printError("--to is required"); process.exit(1); }
-    if (!flags.url) { printError("--url is required"); process.exit(1); }
+    const to = requireString(flags, "to");
+    const url = requireString(flags, "url");
 
-    const result = await sendImage(token, flags.to, flags.url);
+    const result = await sendImage(token, to, url);
     printJson(result);
     process.exit(0);
   }
 
   // --- Multicast ---
   if (command === "multicast") {
-    if (!flags["user-id"] || !Array.isArray(flags["user-id"]) || flags["user-id"].length === 0) {
-      printError("--user-id is required (can be specified multiple times)");
-      process.exit(1);
-    }
-    if (!flags.message) { printError("--message is required"); process.exit(1); }
+    const userIds = requireUserIds(flags);
+    const message = requireString(flags, "message");
 
-    const result = await multicast(token, flags["user-id"], flags.message);
+    const result = await multicast(token, userIds, message);
     printJson(result);
     process.exit(0);
   }
 
   // --- Broadcast ---
   if (command === "broadcast") {
-    if (!flags.message) { printError("--message is required"); process.exit(1); }
+    const message = requireString(flags, "message");
 
-    const result = await broadcast(token, flags.message);
+    const result = await broadcast(token, message);
     printJson(result);
     process.exit(0);
   }
 
   // --- Profile ---
   if (command === "profile") {
-    if (!flags["user-id"]) { printError("--user-id is required"); process.exit(1); }
-    if (flags["user-id"].length !== 1) {
-      printError("profile accepts exactly one --user-id");
-      process.exit(1);
-    }
+    const userId = requireSingleUserId(flags);
 
-    const result = await getProfile(token, flags["user-id"][0]);
+    const result = await getProfile(token, userId);
     printJson(result.data);
     process.exit(0);
   }
-
-  printError(`Unknown command: ${command}`);
-  console.log(USAGE);
-  process.exit(1);
 }
 
 main().catch((err) => {
