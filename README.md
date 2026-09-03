@@ -59,6 +59,17 @@ line-send broadcast --message "Good morning!"
 line-send profile --user-id U1234567890abcdef
 ```
 
+## Development
+
+```bash
+npm test
+```
+
+Runs the test suite (`test/*.test.js`, via Node's built-in test runner) covering config
+save/load/clear, the LINE API client's retry/backoff/timeout/idempotency behavior, and CLI
+flag validation. Tests never touch your real `~/.line-send/config.json` or make network
+calls — they use an isolated config directory (`LINE_SEND_CONFIG_DIR`) and a mocked `fetch`.
+
 ## OpenClaw Integration
 
 Copy the `skill/SKILL.md` file into your OpenClaw workspace skills directory:
