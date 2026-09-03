@@ -16,7 +16,7 @@
  *   line-send config --clear
  */
 
-import { sendText, sendSticker, sendImage, multicast, broadcast } from "../lib/line-api.js";
+import { sendText, sendSticker, sendImage, multicast, broadcast, getProfile } from "../lib/line-api.js";
 import { loadConfig, saveConfig, getConfigPath } from "../lib/config.js";
 
 const USAGE = `
@@ -205,15 +205,8 @@ async function main() {
   if (command === "profile") {
     if (!flags["user-id"]) { printError("--user-id is required"); process.exit(1); }
 
-    const res = await fetch(`https://api.line.me/v2/bot/profile/${flags["user-id"]}`, {
-      headers: { "Authorization": `Bearer ${token}` },
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      printError(`LINE API error ${res.status}: ${JSON.stringify(data)}`);
-      process.exit(1);
-    }
-    printJson(data);
+    const result = await getProfile(token, flags["user-id"]);
+    printJson(result.data);
     process.exit(0);
   }
 
@@ -223,6 +216,15 @@ async function main() {
 }
 
 main().catch((err) => {
-  printError(err.message);
+  const status = err.status || 0;
+  if (status === 429) {
+    printError(`Rate limited by LINE API. Try again in a few seconds. (${err.message})`);
+  } else if (status >= 500) {
+    printError(`LINE API server error (${status}). This may be temporary — try again. (${err.message})`);
+  } else if (status === 0) {
+    printError(`Network/timeout error: ${err.message}. Check your connection and try again.`);
+  } else {
+    printError(err.message);
+  }
   process.exit(1);
 });
